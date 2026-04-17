@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "next dev",
+    "dev:hot": "concurrently -s last -n \"APP,WARM\" -c \"cyan,magenta\" \"tsx server/chat/server.ts\" \"node scripts/warmup-dev.mjs\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
