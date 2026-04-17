@@ -1,8 +1,11 @@
+'use client';
+
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback } from 'react';
 import type { PropsWithChildren } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { supabase } from '../../integrations/supabase/client';
-import type { Database } from '../../types/schema';
+import type { Database } from '@/types/schema';
+import { createClient } from '@/lib/supabase/browser';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
@@ -17,21 +20,25 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
+  const supabase = createClient();
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadProfile = async (userId?: string) => {
+  const loadProfile = useCallback(async (userId?: string) => {
     if (!userId) {
       setProfile(null);
       return;
     }
+
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
     setProfile(data ?? null);
-  };
+  }, [supabase]);
 
   useEffect(() => {
+    let mounted = true;
     supabase.auth.getSession().then(async ({ data }) => {
+      if (!mounted) return;
       setSession(data.session);
       await loadProfile(data.session?.user.id);
       setLoading(false);
@@ -42,8 +49,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
       await loadProfile(next?.user.id);
       setLoading(false);
     });
-    return () => listener.subscription.unsubscribe();
-  }, []);
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, [supabase, loadProfile]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -55,7 +66,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         await supabase.auth.signOut();
       },
     }),
-    [session, profile, loading],
+    [session, profile, loading, supabase, loadProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -63,8 +74,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
 }
